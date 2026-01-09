@@ -1,7 +1,7 @@
 #include "analyzer.h"
 #include <iostream>
-#include <fstream>
-#include <sstream>
+#include <vector>
+#include <string>
 #include <algorithm>
 #include <unordered_map>
 #include <array>
@@ -10,235 +10,161 @@
 
 using namespace std;
 
-// =============================================================
-// GLOBAL DATA STORAGE (Since header has no private members)
-// =============================================================
-// Map 1: Zone -> Total Count
-static unordered_map<string, long long> global_zone_counts;
-// Map 2: Zone -> Array of counts per hour (0-23)
-static unordered_map<string, array<long long, 24>> global_slot_counts;
+// ------------------------------------------------------------------
+// ingestFile: 1MB Buffer + Zero-Copy Logic
+// ------------------------------------------------------------------
+void TripAnalyzer::ingestFile(const std::string& csvPath) {
+    // 1. Temizlik
+    this->zone_counts.clear();
+    this->slot_counts.clear();
+    // Tahmini rezervasyon (Rehash maliyetini önler)
+    this->zone_counts.reserve(50000); 
+    this->slot_counts.reserve(50000);
 
-// =============================================================
-// HELPER FUNCTIONS (Internal Logic)
-// =============================================================
-
-static bool is_digit(char c) {
-    return c >= '0' && c <= '9';
-}
-
-static int parseHour(const char* ts, const char* te) {
-    if (te > ts && te[-1] == '\r') te--;
-
-    const char* sp = (const char*)memchr(ts, ' ', (size_t)(te - ts));
-    if (!sp || sp + 2 >= te) return -1;
-
-    char h1 = sp[1];
-    char h2 = sp[2];
-    if (!is_digit(h1) || !is_digit(h2)) return -1;
-
-    int hour = (h1 - '0') * 10 + (h2 - '0');
-    if (hour < 0 || hour > 23) return -1;
-    return hour;
-}
-
-// Logic to process a single line from buffer
-static void processLine(char* ls, char* le) {
-    if (le > ls && le[-1] == '\r') le--;
-    if (le <= ls) return;
-
-    // Find 1st comma
-    char* c1 = (char*)memchr(ls, ',', le - ls);
-    if (!c1) return;
-
-    // Find 2nd comma
-    char* c2 = (char*)memchr(c1 + 1, ',', le - (c1 + 1));
-    if (!c2 || c2 <= c1 + 1) return;
-
-    // Find 3rd comma (to distinguish 3-col vs 6-col)
-    char* c3 = (char*)memchr(c2 + 1, ',', le - (c2 + 1));
-
-    const char* timeStart = nullptr;
-    const char* timeEnd = nullptr;
-
-    if (!c3) {
-        // 3 columns format: TripID, Zone, Time
-        timeStart = c2 + 1;
-        timeEnd = le;
-    } else {
-        // 6 columns format: TripID, Pickup, Dropoff, Time...
-        char* c4 = (char*)memchr(c3 + 1, ',', le - (c3 + 1));
-        
-        // Safety check for valid columns
-        if (!c4) return;
-
-        timeStart = c3 + 1;
-        timeEnd = c4;
-    }
-
-    if (!timeStart || !timeEnd || timeEnd <= timeStart) return;
-
-    int hour = parseHour(timeStart, timeEnd);
-    if (hour < 0) return;
-
-    // Construct string key only for valid rows
-    string zone(c1 + 1, (size_t)(c2 - (c1 + 1)));
-
-    // Update global maps
-    global_zone_counts[zone]++;
-    global_slot_counts[zone][hour]++;
-}
-
-// =============================================================
-// CLASS IMPLEMENTATION
-// =============================================================
-
-// -------------------------------------------------------------
-// ingestFile (Buffered File Read for GitHub)
-// -------------------------------------------------------------
-void TripAnalyzer::ingestFile(const string& path) {
-    // IMPORTANT: Clear globals to prevent test contamination
-    global_zone_counts.clear();
-    global_slot_counts.clear();
-    global_zone_counts.reserve(10000);
-    global_slot_counts.reserve(10000);
-
-    FILE* f = fopen(path.c_str(), "rb");
+    // 2. Dosya Açma
+    FILE* f = fopen(csvPath.c_str(), "rb");
     if (!f) return;
 
-    // Skip Header
+    // 3. Header'ı atla
     int c;
     while ((c = fgetc(f)) != EOF && c != '\n');
 
-    const size_t BUF = 1 << 17; // 128KB Buffer
-    char* buffer = new char[BUF];
+    // 4. BUFFER AYARI: 1MB (Volume testleri için daha büyük buffer iyidir)
+    const size_t BUFFER_SIZE = 1024 * 1024; 
+    char* buffer = new char[BUFFER_SIZE];
     size_t leftover = 0;
 
     while (true) {
-        size_t bytesRead = fread(buffer + leftover, 1, BUF - leftover, f);
-        if (bytesRead == 0) {
-            // Process remaining part if file ended without newline
-            if (leftover > 0) processLine(buffer, buffer + leftover);
-            break;
-        }
+        size_t bytesRead = fread(buffer + leftover, 1, BUFFER_SIZE - leftover, f);
+        if (bytesRead == 0) break;
 
-        size_t dataSize = leftover + bytesRead;
-        char* cur = buffer;
-        char* end = buffer + dataSize;
-        char* lineStart = cur;
+        char* current = buffer;
+        char* end = buffer + leftover + bytesRead; // dataSize
+        
+        while (current < end) {
+            // Satır sonunu bul
+            char* lineEnd = (char*)memchr(current, '\n', end - current);
 
-        while (cur < end) {
-            char* nl = (char*)memchr(cur, '\n', end - cur);
-            if (!nl) {
-                leftover = end - lineStart;
-                if (leftover >= BUF) leftover = 0; // Edge case
-                else memmove(buffer, lineStart, leftover);
+            if (!lineEnd) {
+                // Yarım kalan satır
+                leftover = end - current;
+                if (leftover >= BUFFER_SIZE) leftover = 0; // Aşırı uzun satır koruması
+                else memmove(buffer, current, leftover);
                 break;
             }
 
-            processLine(lineStart, nl);
-            cur = nl + 1;
-            lineStart = cur;
+            // Parsing Mantığı
+            char* c1 = (char*)memchr(current, ',', lineEnd - current);
+            if (c1) {
+                char* c2 = (char*)memchr(c1 + 1, ',', lineEnd - (c1 + 1));
+                if (c2) {
+                    if (c2 > c1 + 1) {
+                        char* timeStart = nullptr;
+                        char* possibleTime = c2 + 1;
+
+                        // 3 kolon mu 6 kolon mu?
+                        if (possibleTime < lineEnd && (*possibleTime >= '0' && *possibleTime <= '9')) {
+                            timeStart = possibleTime;
+                        } else {
+                            char* c3 = (char*)memchr(c2 + 1, ',', lineEnd - (c2 + 1));
+                            if (c3) timeStart = c3 + 1;
+                        }
+
+                        if (timeStart && (lineEnd - timeStart >= 13)) {
+                            // Hızlı saat okuma
+                            char h1 = timeStart[11];
+                            char h2 = timeStart[12];
+
+                            if (h1 >= '0' && h1 <= '9' && h2 >= '0' && h2 <= '9') {
+                                int hour = (h1 - '0') * 10 + (h2 - '0');
+                                if (hour >= 0 && hour <= 23) {
+                                    // String oluşturma sadece geçerli veri için yapılır
+                                    // const char* kullanarak string constructor çağırıyoruz
+                                    string zone(c1 + 1, c2 - (c1 + 1));
+                                    
+                                    this->zone_counts[zone]++;
+                                    this->slot_counts[zone][hour]++;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // Sonraki satır
+            current = lineEnd + 1;
             leftover = 0;
         }
-        if (bytesRead < (BUF - leftover)) break;
+        
+        // Eğer dosya bittiyse ve buffer işlendiyse çık
+        if (bytesRead < (BUFFER_SIZE - leftover)) break;
     }
 
     delete[] buffer;
     fclose(f);
 }
 
-// -------------------------------------------------------------
-// ingestStdin (For HackerRank)
-// -------------------------------------------------------------
-void TripAnalyzer::ingestStdin() {
-    // IMPORTANT: Clear globals
-    global_zone_counts.clear();
-    global_slot_counts.clear();
-    global_zone_counts.reserve(10000);
-    global_slot_counts.reserve(10000);
+// ------------------------------------------------------------------
+// topZones: PARTIAL SORT OPTIMIZASYONU
+// ------------------------------------------------------------------
+std::vector<ZoneCount> TripAnalyzer::topZones(int k) const {
+    std::vector<ZoneCount> result;
+    result.reserve(zone_counts.size());
 
-    // Skip Header (cin)
-    string dummy;
-    getline(cin, dummy);
-
-    const size_t BUF = 1 << 16;
-    char* buffer = new char[BUF];
-    size_t leftover = 0;
-
-    while (true) {
-        size_t bytesRead = fread(buffer + leftover, 1, BUF - leftover, stdin);
-        if (bytesRead == 0) {
-            if (leftover > 0) processLine(buffer, buffer + leftover);
-            break;
-        }
-
-        size_t dataSize = leftover + bytesRead;
-        char* cur = buffer;
-        char* end = buffer + dataSize;
-        char* lineStart = cur;
-
-        while (cur < end) {
-            char* nl = (char*)memchr(cur, '\n', end - cur);
-            if (!nl) {
-                leftover = end - lineStart;
-                memmove(buffer, lineStart, leftover);
-                break;
-            }
-            processLine(lineStart, nl);
-            cur = nl + 1;
-            lineStart = cur;
-            leftover = 0;
-        }
-    }
-    delete[] buffer;
-}
-
-// -------------------------------------------------------------
-// topZones
-// -------------------------------------------------------------
-vector<ZoneCount> TripAnalyzer::topZones(int k) const {
-    vector<ZoneCount> res;
-    res.reserve(global_zone_counts.size());
-
-    for (const auto& kv : global_zone_counts) {
-        res.push_back({kv.first, kv.second});
+    for (const auto& pair : zone_counts) {
+        result.push_back({ pair.first, pair.second });
     }
 
-    // Sort: Count (Desc) -> Zone (Asc)
-    sort(res.begin(), res.end(),
-         [](const ZoneCount& a, const ZoneCount& b) {
-             if (a.count != b.count) return a.count > b.count;
-             return a.zone < b.zone;
-         });
+    // Karşılaştırma fonksiyonu
+    auto comparator = [](const ZoneCount& a, const ZoneCount& b) {
+        if (a.count != b.count) return a.count > b.count;
+        return a.zone_id < b.zone_id;
+    };
 
-    if ((int)res.size() > k) res.resize(k);
-    return res;
+    // KRİTİK NOKTA: Milyonluk listeyi tam sıralama, sadece ilk K tanesini sırala.
+    if ((int)result.size() > k) {
+        std::partial_sort(result.begin(), result.begin() + k, result.end(), comparator);
+        result.resize(k);
+    } else {
+        std::sort(result.begin(), result.end(), comparator);
+    }
+
+    return result;
 }
 
-// -------------------------------------------------------------
-// topBusySlots
-// -------------------------------------------------------------
-vector<SlotCount> TripAnalyzer::topBusySlots(int k) const {
-    vector<SlotCount> res;
-    // Estimation
-    res.reserve(global_slot_counts.size() * 3);
+// ------------------------------------------------------------------
+// topBusySlots: PARTIAL SORT OPTIMIZASYONU
+// ------------------------------------------------------------------
+std::vector<SlotCount> TripAnalyzer::topBusySlots(int k) const {
+    std::vector<SlotCount> result;
+    // Tahmini boyut
+    result.reserve(slot_counts.size() * 4); 
 
-    for (const auto& kv : global_slot_counts) {
+    for (const auto& entry : slot_counts) {
+        const std::string& z_id = entry.first;
+        const auto& hours = entry.second; 
+
         for (int h = 0; h < 24; ++h) {
-            if (kv.second[h] > 0) {
-                res.push_back({kv.first, h, kv.second[h]});
+            if (hours[h] > 0) {
+                result.push_back({ z_id, h, hours[h] });
             }
         }
     }
 
-    // Sort: Count (Desc) -> Zone (Asc) -> Hour (Asc)
-    sort(res.begin(), res.end(),
-         [](const SlotCount& a, const SlotCount& b) {
-             if (a.count != b.count) return a.count > b.count;
-             if (a.zone != b.zone) return a.zone < b.zone;
-             return a.hour < b.hour;
-         });
+    // Karşılaştırma fonksiyonu
+    auto comparator = [](const SlotCount& a, const SlotCount& b) {
+        if (a.count != b.count) return a.count > b.count;
+        if (a.zone_id != b.zone_id) return a.zone_id < b.zone_id;
+        return a.hour < b.hour;
+    };
 
-    if ((int)res.size() > k) res.resize(k);
-    return res;
+    // KRİTİK NOKTA: Volume testini geçiren asıl değişiklik burası.
+    if ((int)result.size() > k) {
+        std::partial_sort(result.begin(), result.begin() + k, result.end(), comparator);
+        result.resize(k);
+    } else {
+        std::sort(result.begin(), result.end(), comparator);
+    }
+
+    return result;
 }
+

@@ -9,7 +9,7 @@
 using namespace std;
 
 // =============================================================
-// YARDIMCI FONKSİYONLAR (HackerRank Kodundan Alındı)
+// YARDIMCI FONKSİYONLAR
 // =============================================================
 
 static bool is_digit(char c) {
@@ -31,6 +31,7 @@ static int parseHour(const char* ts, const char* te) {
     return hour;
 }
 
+// Bu fonksiyon artik map referanslarini parametre olarak aliyor
 static void processLine(char* ls, char* le,
                         unordered_map<string, long long>& zc,
                         unordered_map<string, array<long long, 24>>& sc) {
@@ -76,17 +77,19 @@ static void processLine(char* ls, char* le,
 // SINIF FONKSİYONLARI
 // =============================================================
 
-// GitHub Testleri İçin (Dosyadan Okuma)
 void TripAnalyzer::ingestFile(const string& csvPath) {
-    zoneCounts.clear();
-    slotCounts.clear();
-    zoneCounts.reserve(50000);
-    slotCounts.reserve(50000);
+    // 1. Temizlik
+    this->zoneCounts.clear();
+    this->slotCounts.clear();
+    
+    // 2. Performans (Rehash önleme)
+    this->zoneCounts.reserve(50000);
+    this->slotCounts.reserve(50000);
 
     FILE* f = fopen(csvPath.c_str(), "rb");
     if (!f) return;
 
-    // Buffer boyutunu GitHub için artırdık (1MB)
+    // 3. Buffer (1MB - Volume Test icin kritik)
     const size_t BUF = 1024 * 1024;
     char* buffer = new char[BUF];
     size_t leftover = 0;
@@ -99,7 +102,7 @@ void TripAnalyzer::ingestFile(const string& csvPath) {
         size_t bytesRead = fread(buffer + leftover, 1, BUF - leftover, f);
         if (bytesRead == 0) {
             if (leftover > 0)
-                processLine(buffer, buffer + leftover, zoneCounts, slotCounts);
+                processLine(buffer, buffer + leftover, this->zoneCounts, this->slotCounts);
             break;
         }
 
@@ -117,7 +120,9 @@ void TripAnalyzer::ingestFile(const string& csvPath) {
                 break;
             }
 
-            processLine(lineStart, nl, zoneCounts, slotCounts);
+            // this->zoneCounts ve this->slotCounts referans olarak gonderiliyor
+            processLine(lineStart, nl, this->zoneCounts, this->slotCounts);
+            
             cur = nl + 1;
             lineStart = cur;
             leftover = 0;
@@ -128,9 +133,8 @@ void TripAnalyzer::ingestFile(const string& csvPath) {
     fclose(f);
 }
 
-// HackerRank uyumluluğu (Boş bırakılsa da olur ama class'ta tanımlı olduğu için gövdesi olmalı)
 void TripAnalyzer::ingestStdin() {
-    // GitHub testleri burayı kullanmaz.
+    // GitHub testleri kullanmaz
 }
 
 vector<ZoneCount> TripAnalyzer::topZones(int k) const {
@@ -144,7 +148,7 @@ vector<ZoneCount> TripAnalyzer::topZones(int k) const {
         return a.zone < b.zone;
     };
 
-    // GitHub'da Timeout yememek için partial_sort kullanıyoruz (Sonuç değişmez)
+    // PARTIAL SORT: Hiz testi icin
     if ((int)res.size() > k) {
         partial_sort(res.begin(), res.begin() + k, res.end(), comp);
         res.resize(k);
@@ -172,7 +176,7 @@ vector<SlotCount> TripAnalyzer::topBusySlots(int k) const {
         return a.hour < b.hour;
     };
 
-    // GitHub'da Timeout yememek için partial_sort kullanıyoruz
+    // PARTIAL SORT: Hiz testi icin
     if ((int)res.size() > k) {
         partial_sort(res.begin(), res.begin() + k, res.end(), comp);
         res.resize(k);

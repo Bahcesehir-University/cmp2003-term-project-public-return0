@@ -1,8 +1,10 @@
-#ifndef ANALYZER_H
-#define ANALYZER_H
+#ifndef TRIP_ANALYZER_H
+#define TRIP_ANALYZER_H
 
 #include <string>
 #include <vector>
+#include <unordered_map>
+#include <array>
 
 using namespace std;
 
@@ -18,11 +20,16 @@ struct SlotCount {
 };
 
 class TripAnalyzer {
-public:
-    
-    void ingestFile(const string& path);
+private:
+    // Verileri saklayan haritalar
+    unordered_map<string, long long> zoneCounts;
+    unordered_map<string, array<long long, 24>> slotCounts;
 
-  
+public:
+    // GitHub için gerekli (Dosyadan okuma)
+    void ingestFile(const string& csvPath);
+
+    // HackerRank uyumluluğu için (Stdin okuma)
     void ingestStdin();
 
     vector<ZoneCount> topZones(int k = 10) const;
@@ -30,4 +37,3 @@ public:
 };
 
 #endif
-

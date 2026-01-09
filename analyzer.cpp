@@ -1,14 +1,5 @@
 #include "analyzer.h"
 
-// Students may use ANY data structure internally
-
-void TripAnalyzer::ingestFile(const std::string& csvPath) {
-    // TODO:
-    // - open file
-    // - skip header
-    // - skip malformed rows
-    // - extract PickupZoneID and pickup hour
-    // - aggregate counts
 #include <algorithm>
 #include <unordered_map>
 #include <array>
@@ -65,14 +56,12 @@ static void processLine(
         timeEnd   = le;
     } else {
         char* c4 = (char*)memchr(c3 + 1, ',', le - (c3 + 1));
-        char* c5 = c4 ? (char*)memchr(c4 + 1, ',', le - (c4 + 1)) : nullptr;
-        if (!c4 || !c5) return;
-
+        if (!c4) return;
         timeStart = c3 + 1;
         timeEnd   = c4;
     }
 
-    if (!timeStart || !timeEnd || timeEnd <= timeStart) return;
+    if (timeEnd <= timeStart) return;
 
     int hour = parseHour(timeStart, timeEnd);
     if (hour < 0) return;
@@ -83,11 +72,6 @@ static void processLine(
     sc[zone][hour]++;
 }
 
-std::vector<ZoneCount> TripAnalyzer::topZones(int k) const {
-    // TODO:
-    // - sort by count desc, zone asc
-    // - return first k
-    return {};
 // ---------------- TripAnalyzer ----------------
 void TripAnalyzer::ingestFile(const string& path) {
     zoneCounts.clear();
@@ -135,11 +119,8 @@ void TripAnalyzer::ingestStdin() {
                 break;
             }
 
-            char* lineEnd = nl;
+            processLine(lineStart, nl, zoneCounts, slotCounts);
             cur = nl + 1;
-
-            processLine(lineStart, lineEnd, zoneCounts, slotCounts);
-
             lineStart = cur;
             leftover = 0;
         }
@@ -162,11 +143,6 @@ vector<ZoneCount> TripAnalyzer::topZones(int k) const {
     return res;
 }
 
-std::vector<SlotCount> TripAnalyzer::topBusySlots(int k) const {
-    // TODO:
-    // - sort by count desc, zone asc, hour asc
-    // - return first k
-    return {};
 vector<SlotCount> TripAnalyzer::topBusySlots(int k) const {
     vector<SlotCount> res;
 
@@ -186,4 +162,6 @@ vector<SlotCount> TripAnalyzer::topBusySlots(int k) const {
     if ((int)res.size() > k) res.resize(k);
     return res;
 }
+
+
 

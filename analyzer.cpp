@@ -10,11 +10,17 @@
 
 using namespace std;
 
+// =============================================================
+// GLOBAL SAKLAMA ALANI
+// Header dosyasında private değişken olmadığı için static kullanıyoruz.
+// =============================================================
 static unordered_map<string, long long> global_zone_counts;
 static unordered_map<string, array<long long, 24>> global_slot_counts;
 
+// =============================================================
+// PARSING MANTIĞI (Hızlı ve Hatasız)
+// =============================================================
 
-void TripAnalyzer::ingestStdin() {}
 inline static bool is_digit_fast(char c) {
     return c >= '0' && c <= '9';
 }
@@ -86,7 +92,7 @@ void TripAnalyzer::ingestFile(const string& path) {
     global_zone_counts.clear();
     global_slot_counts.clear();
     
-    // Performans için yer ayır (Rehash maliyetini önler)
+    // Performans için yer ayır
     global_zone_counts.reserve(50000); 
     global_slot_counts.reserve(50000);
 
@@ -138,9 +144,10 @@ void TripAnalyzer::ingestFile(const string& path) {
     fclose(f);
 }
 
-// HackerRank uyumluluğu (GitHub testlerinde kullanılmaz ama class yapısında var)
+// BU FONKSİYON HEADER'DA VAR AMA GÖVDESİ EKSİKTİ.
+// Boş bile olsa tanımlamak zorundayız, yoksa Linker Error verir.
 void TripAnalyzer::ingestStdin() {
-    // Boş
+    // GitHub testleri burayı kullanmıyor ama derlenmesi için şart.
 }
 
 vector<ZoneCount> TripAnalyzer::topZones(int k) const {
@@ -148,6 +155,7 @@ vector<ZoneCount> TripAnalyzer::topZones(int k) const {
     res.reserve(global_zone_counts.size());
 
     for (const auto& kv : global_zone_counts) {
+        // Header yapısına uygun: zone, count
         res.push_back({kv.first, kv.second});
     }
 
@@ -156,42 +164,13 @@ vector<ZoneCount> TripAnalyzer::topZones(int k) const {
         return a.zone < b.zone;
     };
 
-    // PARTIAL SORT: En önemli optimizasyon burası.
-    // Tüm listeyi sıralamak yerine sadece ilk K tanesini sıralar.
+    // PARTIAL SORT: Milyonluk veriyi tam sıralamak yerine sadece ilk K tanesini sıralar.
+    // Bu, Volume testindeki Time Limit sorununu çözer.
     if ((int)res.size() > k) {
         std::partial_sort(res.begin(), res.begin() + k, res.end(), comp);
         res.resize(k);
     } else {
-        std::sort(res.begin(), res.end(), comp);
-    }
-
-    return res;
-}
-
-vector<SlotCount> TripAnalyzer::topBusySlots(int k) const {
-    vector<SlotCount> res;
-    res.reserve(global_slot_counts.size() * 3);
-
-    for (const auto& kv : global_slot_counts) {
-        for (int h = 0; h < 24; ++h) {
-            if (kv.second[h] > 0) {
-                res.push_back({kv.first, h, kv.second[h]});
-            }
-        }
-    }
-
-    auto comp = [](const SlotCount& a, const SlotCount& b) {
-        if (a.count != b.count) return a.count > b.count;
-        if (a.zone != b.zone) return a.zone < b.zone;
-        return a.hour < b.hour;
-    };
-
-    // PARTIAL SORT: Hacim testi için hızlandırıcı.
-    if ((int)res.size() > k) {
-        std::partial_sort(res.begin(), res.begin() + k, res.end(), comp);
-        res.resize(k);
-    } else {
-        std::sort(res.begin(), res.end(), comp);
+std::sort(res.begin(), res.end(), comp);
     }
 
     return res;

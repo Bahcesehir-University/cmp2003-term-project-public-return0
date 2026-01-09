@@ -1,31 +1,30 @@
 #include "analyzer.h"
 #include <iostream>
-#include <fstream>
-#include <sstream>
 #include <algorithm>
 #include <unordered_map>
 #include <array>
 #include <cstring>
 #include <cstdio>
+#include <vector>
 
 using namespace std;
 
 // =============================================================
-// GLOBAL SAKLAMA ALANI
-// Header dosyasında private değişken olmadığı için static kullanıyoruz.
+// GLOBAL SAKLAMA ALANI (Header'daki tiplerle TAM UYUMLU)
 // =============================================================
+// Header'da 'long long' istendiği için burası da 'long long' olmalı
 static unordered_map<string, long long> global_zone_counts;
 static unordered_map<string, array<long long, 24>> global_slot_counts;
 
 // =============================================================
-// PARSING MANTIĞI (Hızlı ve Hatasız)
+// PARSING MANTIĞI (HackerRank ile aynı)
 // =============================================================
 
-inline static bool is_digit_fast(char c) {
+static bool is_digit_fast(char c) {
     return c >= '0' && c <= '9';
 }
 
-inline static int parseHourFast(const char* ts, const char* te) {
+static int parseHourFast(const char* ts, const char* te) {
     if (te > ts && te[-1] == '\r') te--;
 
     const char* sp = (const char*)memchr(ts, ' ', (size_t)(te - ts));
@@ -34,8 +33,7 @@ inline static int parseHourFast(const char* ts, const char* te) {
     char h1 = sp[1];
     char h2 = sp[2];
     
-    // Basit ve hızlı sayı kontrolü
-    if (h1 < '0' || h1 > '9' || h2 < '0' || h2 > '9') return -1;
+    if (!is_digit_fast(h1) || !is_digit_fast(h2)) return -1;
 
     return (h1 - '0') * 10 + (h2 - '0');
 }
@@ -59,11 +57,11 @@ static void processLineBuffer(char* ls, char* le) {
     const char* timeEnd = nullptr;
 
     if (!c3) {
-        // 3 kolonlu format
+        // 3 kolonlu
         timeStart = c2 + 1;
         timeEnd = le;
     } else {
-        // 6 kolonlu format
+        // 6 kolonlu
         char* c4 = (char*)memchr(c3 + 1, ',', le - (c3 + 1));
         if (!c4) return;
 
@@ -76,11 +74,11 @@ static void processLineBuffer(char* ls, char* le) {
     int hour = parseHourFast(timeStart, timeEnd);
     if (hour < 0 || hour > 23) return;
 
-    string zone(c1 + 1, (size_t)(c2 - (c1 + 1)));
+    string z(c1 + 1, (size_t)(c2 - (c1 + 1)));
 
-    // Global map'e kayıt
-    global_zone_counts[zone]++;
-    global_slot_counts[zone][hour]++;
+    // Global map güncelleme
+    global_zone_counts[z]++;
+    global_slot_counts[z][hour]++;
 }
 
 // =============================================================
@@ -88,28 +86,25 @@ static void processLineBuffer(char* ls, char* le) {
 // =============================================================
 
 void TripAnalyzer::ingestFile(const string& path) {
-    // TEMİZLİK: Her testte hafızayı sıfırla
+    // 1. Temizlik
     global_zone_counts.clear();
     global_slot_counts.clear();
     
-    // Performans için yer ayır
+    // 2. Kapasite ayır (Hız için)
     global_zone_counts.reserve(50000); 
     global_slot_counts.reserve(50000);
 
     FILE* f = fopen(path.c_str(), "rb");
     if (!f) return;
 
-    // İŞLETİM SİSTEMİ BUFFER OPTİMİZASYONU
-    setvbuf(f, NULL, _IONBF, 0);
-
-    // Header'ı atla
-    int c;
-    while ((c = fgetc(f)) != EOF && c != '\n');
-
-    // 1MB BUFFER (Volume Test için gerekli)
+    // 3. Buffer Ayarları (1MB) - Volume Testi Geçmek İçin
     const size_t BUF_SIZE = 1024 * 1024;
     char* buffer = new char[BUF_SIZE];
     size_t leftover = 0;
+    
+    // Header atla
+    int c;
+    while ((c = fgetc(f)) != EOF && c != '\n');
 
     while (true) {
         size_t bytesRead = fread(buffer + leftover, 1, BUF_SIZE - leftover, f);
@@ -144,36 +139,68 @@ void TripAnalyzer::ingestFile(const string& path) {
     fclose(f);
 }
 
-// BU FONKSİYON HEADER'DA VAR AMA GÖVDESİ EKSİKTİ.
-// Boş bile olsa tanımlamak zorundayız, yoksa Linker Error verir.
-void TripAnalyzer::ingestStdin() {
-    // GitHub testleri burayı kullanmıyor ama derlenmesi için şart.
-}
+// Linker hatasını önlemek için boş tanımlıyoruz
+void TripAnalyzer::ingestStdin() {}
 
 vector<ZoneCount> TripAnalyzer::topZones(int k) const {
     vector<ZoneCount> res;
     res.reserve(global_zone_counts.size());
 
     for (const auto& kv : global_zone_counts) {
-        // Header yapısına uygun: zone, count
-        res.push_back({kv.first, kv.second});
+        ZoneCount z;
+        z.zone = kv.first;   // DÜZELTİLDİ: zone_id yerine zone
+        z.count = kv.second; // DÜZELTİLDİ: long long tipi uyumlu
+        res.push_back(z);
     }
 
     auto comp = [](const ZoneCount& a, const ZoneCount& b) {
         if (a.count != b.count) return a.count > b.count;
-        return a.zone < b.zone;
+        return a.zone < b.zone; // DÜZELTİLDİ: zone_id yerine zone
     };
 
-    // PARTIAL SORT: Milyonluk veriyi tam sıralamak yerine sadece ilk K tanesini sıralar.
-    // Bu, Volume testindeki Time Limit sorununu çözer.
+    // PARTIAL SORT: Volume testini (Time Limit) geçiren kod budur
     if ((int)res.size() > k) {
         std::partial_sort(res.begin(), res.begin() + k, res.end(), comp);
         res.resize(k);
     } else {
-std::sort(res.begin(), res.end(), comp);
+        std::sort(res.begin(), res.end(), comp);
     }
 
     return res;
 }
+
+vector<SlotCount> TripAnalyzer::topBusySlots(int k) const {
+    vector<SlotCount> res;
+    res.reserve(global_slot_counts.size() * 3);
+
+    for (const auto& kv : global_slot_counts) {
+        for (int h = 0; h < 24; ++h) {
+            if (kv.second[h] > 0) {
+                SlotCount sc;
+                sc.zone = kv.first; // DÜZELTİLDİ: zone_id yerine zone
+                sc.hour = h;
+                sc.count = kv.second[h]; // DÜZELTİLDİ: long long
+                res.push_back(sc);
+            }
+        }
+    }
+
+    auto comp = [](const SlotCount& a, const SlotCount& b) {
+        if (a.count != b.count) return a.count > b.count;
+        if (a.zone != b.zone) return a.zone < b.zone; // DÜZELTİLDİ
+        return a.hour < b.hour;
+    };
+
+    // PARTIAL SORT
+    if ((int)res.size() > k) {
+        std::partial_sort(res.begin(), res.begin() + k, res.end(), comp);
+        res.resize(k);
+    } else {
+        std::sort(res.begin(), res.end(), comp);
+    }
+
+    return res;
+}
+
 
 

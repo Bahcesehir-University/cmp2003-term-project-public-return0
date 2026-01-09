@@ -19,10 +19,10 @@ struct SlotCount {
 
 class TripAnalyzer {
 public:
-    // GitHub Classroom testleri ICIN
+    
     void ingestFile(const string& path);
 
-    // HackerRank ICIN
+  
     void ingestStdin();
 
     vector<ZoneCount> topZones(int k = 10) const;
@@ -30,3 +30,4 @@ public:
 };
 
 #endif
+

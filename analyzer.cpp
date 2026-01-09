@@ -8,9 +8,7 @@
 
 using namespace std;
 
-// =============================================================
-// YARDIMCI FONKSİYONLAR
-// =============================================================
+
 
 static bool is_digit(char c) {
     return c >= '0' && c <= '9';
@@ -73,9 +71,6 @@ static void processLine(char* ls, char* le,
     sc[zone][hour]++;
 }
 
-// =============================================================
-// SINIF FONKSİYONLARI
-// =============================================================
 
 void TripAnalyzer::ingestFile(const string& csvPath) {
     // 1. Temizlik
@@ -186,3 +181,4 @@ vector<SlotCount> TripAnalyzer::topBusySlots(int k) const {
 
     return res;
 }
+

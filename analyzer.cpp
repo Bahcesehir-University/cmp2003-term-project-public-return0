@@ -9,24 +9,16 @@
 
 using namespace std;
 
-// =============================================================
-// GLOBAL SAKLAMA ALANI
-// Header dosyasında private değişken olmadığı için static kullanıyoruz.
-// =============================================================
+
 static unordered_map<string, long long> global_zone_counts;
 static unordered_map<string, array<long long, 24>> global_slot_counts;
 
-// =============================================================
-// PARSING MANTIĞI (Hızlı)
-// =============================================================
 
-// Hızlı karakter kontrolü
-static inline bool is_digit_fast(char c) {
+static bool is_digit_safe(char c) {
     return c >= '0' && c <= '9';
 }
 
-// Hızlı saat okuma
-static inline int parseHourFast(const char* ts, const char* te) {
+static int parseHourSafe(const char* ts, const char* te) {
     if (te > ts && te[-1] == '\r') te--;
 
     const char* sp = (const char*)memchr(ts, ' ', (size_t)(te - ts));
@@ -35,13 +27,12 @@ static inline int parseHourFast(const char* ts, const char* te) {
     char h1 = sp[1];
     char h2 = sp[2];
     
-    if (!is_digit_fast(h1) || !is_digit_fast(h2)) return -1;
+    if (!is_digit_safe(h1) || !is_digit_safe(h2)) return -1;
 
     return (h1 - '0') * 10 + (h2 - '0');
 }
 
-// Satır işleme
-static void processLineBuffer(char* ls, char* le) {
+static void processLineSafe(char* ls, char* le) {
     if (le > ls && le[-1] == '\r') le--;
     if (le <= ls) return;
 
@@ -60,11 +51,11 @@ static void processLineBuffer(char* ls, char* le) {
     const char* timeEnd = nullptr;
 
     if (!c3) {
-        // 3 kolonlu format: TripID, Zone, Time
+        // 3 kolonlu
         timeStart = c2 + 1;
         timeEnd = le;
     } else {
-        // 6 kolonlu format: TripID, Pickup, Dropoff, Time...
+        // 6 kolonlu
         char* c4 = (char*)memchr(c3 + 1, ',', le - (c3 + 1));
         if (!c4) return;
 
@@ -74,33 +65,26 @@ static void processLineBuffer(char* ls, char* le) {
 
     if (!timeStart || !timeEnd || timeEnd <= timeStart) return;
 
-    int hour = parseHourFast(timeStart, timeEnd);
+    int hour = parseHourSafe(timeStart, timeEnd);
     if (hour < 0 || hour > 23) return;
 
     string z(c1 + 1, (size_t)(c2 - (c1 + 1)));
 
-    // Global map güncelleme
-    global_zone_counts[z]++;
-    global_slot_counts[z][hour]++;
-}
-
-// =============================================================
-// SINIF FONKSİYONLARI
-// =============================================================
 
 void TripAnalyzer::ingestFile(const string& path) {
-    // 1. Temizlik (Testler arası veri karışmasını önler)
+    // 1. Temizlik
     global_zone_counts.clear();
     global_slot_counts.clear();
     
-    // 2. Kapasite ayır (Rehash maliyetini önler - Performans artışı)
+    // 2. Kapasite (Hız için)
     global_zone_counts.reserve(50000); 
     global_slot_counts.reserve(50000);
 
+    // 3. Dosya Okuma
     FILE* f = fopen(path.c_str(), "rb");
     if (!f) return;
 
-    // 3. Buffer Ayarları (1MB) - Volume Testi için kritik
+    // 1MB BUFFER (Volume Testi Geçmek İçin Kritik)
     const size_t BUF_SIZE = 1024 * 1024;
     char* buffer = new char[BUF_SIZE];
     size_t leftover = 0;
@@ -112,7 +96,7 @@ void TripAnalyzer::ingestFile(const string& path) {
     while (true) {
         size_t bytesRead = fread(buffer + leftover, 1, BUF_SIZE - leftover, f);
         if (bytesRead == 0) {
-            if (leftover > 0) processLineBuffer(buffer, buffer + leftover);
+            if (leftover > 0) processLineSafe(buffer, buffer + leftover);
             break;
         }
 
@@ -130,7 +114,7 @@ void TripAnalyzer::ingestFile(const string& path) {
                 break;
             }
 
-            processLineBuffer(lineStart, nl);
+            processLineSafe(lineStart, nl);
             cur = nl + 1;
             lineStart = cur;
             leftover = 0;
@@ -142,7 +126,7 @@ void TripAnalyzer::ingestFile(const string& path) {
     fclose(f);
 }
 
-// Linker hatasını önlemek için boş tanımlıyoruz
+
 void TripAnalyzer::ingestStdin() {}
 
 vector<ZoneCount> TripAnalyzer::topZones(int k) const {
@@ -151,17 +135,17 @@ vector<ZoneCount> TripAnalyzer::topZones(int k) const {
 
     for (const auto& kv : global_zone_counts) {
         ZoneCount z;
-        z.zone = kv.first;   // DÜZELTME: Senin header'ına uygun (.zone)
-        z.count = kv.second; 
+        z.zone = kv.first;   // Header ile uyumlu: .zone
+        z.count = kv.second; // Header ile uyumlu: long long
         res.push_back(z);
     }
 
     auto comp = [](const ZoneCount& a, const ZoneCount& b) {
         if (a.count != b.count) return a.count > b.count;
-        return a.zone < b.zone; // DÜZELTME: .zone
+        return a.zone < b.zone;
     };
 
-    // PARTIAL SORT: Volume testini (Time Limit) geçiren kilit nokta
+  
     if ((int)res.size() > k) {
         std::partial_sort(res.begin(), res.begin() + k, res.end(), comp);
         res.resize(k);
@@ -180,9 +164,9 @@ vector<SlotCount> TripAnalyzer::topBusySlots(int k) const {
         for (int h = 0; h < 24; ++h) {
             if (kv.second[h] > 0) {
                 SlotCount sc;
-                sc.zone = kv.first; // DÜZELTME: .zone
+                sc.zone = kv.first; // .zone
                 sc.hour = h;
-                sc.count = kv.second[h]; 
+                sc.count = kv.second[h]; // long long
                 res.push_back(sc);
             }
         }
@@ -190,7 +174,7 @@ vector<SlotCount> TripAnalyzer::topBusySlots(int k) const {
 
     auto comp = [](const SlotCount& a, const SlotCount& b) {
         if (a.count != b.count) return a.count > b.count;
-        if (a.zone != b.zone) return a.zone < b.zone; // DÜZELTME: .zone
+        if (a.zone != b.zone) return a.zone < b.zone;
         return a.hour < b.hour;
     };
 

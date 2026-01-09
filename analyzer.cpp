@@ -10,16 +10,11 @@
 
 using namespace std;
 
-// =============================================================
-// GLOBAL SAKLAMA ALANI (Header değişmediği için static şart)
-// =============================================================
 static unordered_map<string, long long> global_zone_counts;
 static unordered_map<string, array<long long, 24>> global_slot_counts;
 
-// =============================================================
-// PARSING MANTIĞI (HackerRank ile birebir aynı - Hızlı)
-// =============================================================
 
+void TripAnalyzer::ingestStdin() {}
 inline static bool is_digit_fast(char c) {
     return c >= '0' && c <= '9';
 }
@@ -201,4 +196,5 @@ vector<SlotCount> TripAnalyzer::topBusySlots(int k) const {
 
     return res;
 }
+
 

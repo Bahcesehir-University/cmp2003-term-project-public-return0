@@ -1,24 +1,22 @@
 #include "analyzer.h"
 #include <iostream>
 #include <algorithm>
-#include <unordered_map>
-#include <array>
+#include <vector>
+#include <string>
 #include <cstring>
 #include <cstdio>
-#include <vector>
 
 using namespace std;
 
+// =============================================================
+// YARDIMCI FONKSİYONLAR (HackerRank Kodundan Alındı)
+// =============================================================
 
-static unordered_map<string, long long> global_zone_counts;
-static unordered_map<string, array<long long, 24>> global_slot_counts;
-
-
-static bool is_digit_safe(char c) {
+static bool is_digit(char c) {
     return c >= '0' && c <= '9';
 }
 
-static int parseHourSafe(const char* ts, const char* te) {
+static int parseHour(const char* ts, const char* te) {
     if (te > ts && te[-1] == '\r') te--;
 
     const char* sp = (const char*)memchr(ts, ' ', (size_t)(te - ts));
@@ -26,25 +24,25 @@ static int parseHourSafe(const char* ts, const char* te) {
 
     char h1 = sp[1];
     char h2 = sp[2];
-    
-    if (!is_digit_safe(h1) || !is_digit_safe(h2)) return -1;
+    if (!is_digit(h1) || !is_digit(h2)) return -1;
 
-    return (h1 - '0') * 10 + (h2 - '0');
+    int hour = (h1 - '0') * 10 + (h2 - '0');
+    if (hour < 0 || hour > 23) return -1;
+    return hour;
 }
 
-static void processLineSafe(char* ls, char* le) {
+static void processLine(char* ls, char* le,
+                        unordered_map<string, long long>& zc,
+                        unordered_map<string, array<long long, 24>>& sc) {
     if (le > ls && le[-1] == '\r') le--;
     if (le <= ls) return;
 
-    // 1. Virgül
     char* c1 = (char*)memchr(ls, ',', le - ls);
     if (!c1) return;
 
-    // 2. Virgül
     char* c2 = (char*)memchr(c1 + 1, ',', le - (c1 + 1));
     if (!c2 || c2 <= c1 + 1) return;
 
-    // 3. Virgül
     char* c3 = (char*)memchr(c2 + 1, ',', le - (c2 + 1));
 
     const char* timeStart = nullptr;
@@ -58,45 +56,50 @@ static void processLineSafe(char* ls, char* le) {
         // 6 kolonlu
         char* c4 = (char*)memchr(c3 + 1, ',', le - (c3 + 1));
         if (!c4) return;
-
+        
         timeStart = c3 + 1;
         timeEnd = c4;
     }
 
     if (!timeStart || !timeEnd || timeEnd <= timeStart) return;
 
-    int hour = parseHourSafe(timeStart, timeEnd);
-    if (hour < 0 || hour > 23) return;
+    int hour = parseHour(timeStart, timeEnd);
+    if (hour < 0) return;
 
-    string z(c1 + 1, (size_t)(c2 - (c1 + 1)));
+    string zone(c1 + 1, (size_t)(c2 - (c1 + 1)));
 
+    zc[zone]++;
+    sc[zone][hour]++;
+}
 
-void TripAnalyzer::ingestFile(const string& path) {
-    // 1. Temizlik
-    global_zone_counts.clear();
-    global_slot_counts.clear();
-    
-    // 2. Kapasite (Hız için)
-    global_zone_counts.reserve(50000); 
-    global_slot_counts.reserve(50000);
+// =============================================================
+// SINIF FONKSİYONLARI
+// =============================================================
 
-    // 3. Dosya Okuma
-    FILE* f = fopen(path.c_str(), "rb");
+// GitHub Testleri İçin (Dosyadan Okuma)
+void TripAnalyzer::ingestFile(const string& csvPath) {
+    zoneCounts.clear();
+    slotCounts.clear();
+    zoneCounts.reserve(50000);
+    slotCounts.reserve(50000);
+
+    FILE* f = fopen(csvPath.c_str(), "rb");
     if (!f) return;
 
-    // 1MB BUFFER (Volume Testi Geçmek İçin Kritik)
-    const size_t BUF_SIZE = 1024 * 1024;
-    char* buffer = new char[BUF_SIZE];
+    // Buffer boyutunu GitHub için artırdık (1MB)
+    const size_t BUF = 1024 * 1024;
+    char* buffer = new char[BUF];
     size_t leftover = 0;
-    
+
     // Header atla
     int c;
     while ((c = fgetc(f)) != EOF && c != '\n');
 
     while (true) {
-        size_t bytesRead = fread(buffer + leftover, 1, BUF_SIZE - leftover, f);
+        size_t bytesRead = fread(buffer + leftover, 1, BUF - leftover, f);
         if (bytesRead == 0) {
-            if (leftover > 0) processLineSafe(buffer, buffer + leftover);
+            if (leftover > 0)
+                processLine(buffer, buffer + leftover, zoneCounts, slotCounts);
             break;
         }
 
@@ -109,48 +112,44 @@ void TripAnalyzer::ingestFile(const string& path) {
             char* nl = (char*)memchr(cur, '\n', end - cur);
             if (!nl) {
                 leftover = end - lineStart;
-                if (leftover >= BUF_SIZE) leftover = 0;
+                if (leftover >= BUF) leftover = 0;
                 else memmove(buffer, lineStart, leftover);
                 break;
             }
 
-            processLineSafe(lineStart, nl);
+            processLine(lineStart, nl, zoneCounts, slotCounts);
             cur = nl + 1;
             lineStart = cur;
             leftover = 0;
         }
-        if (bytesRead < (BUF_SIZE - leftover)) break;
+        if (bytesRead < (BUF - leftover)) break;
     }
-
     delete[] buffer;
     fclose(f);
 }
 
-
-void TripAnalyzer::ingestStdin() {}
+// HackerRank uyumluluğu (Boş bırakılsa da olur ama class'ta tanımlı olduğu için gövdesi olmalı)
+void TripAnalyzer::ingestStdin() {
+    // GitHub testleri burayı kullanmaz.
+}
 
 vector<ZoneCount> TripAnalyzer::topZones(int k) const {
     vector<ZoneCount> res;
-    res.reserve(global_zone_counts.size());
-
-    for (const auto& kv : global_zone_counts) {
-        ZoneCount z;
-        z.zone = kv.first;   // Header ile uyumlu: .zone
-        z.count = kv.second; // Header ile uyumlu: long long
-        res.push_back(z);
-    }
+    res.reserve(zoneCounts.size());
+    for (const auto& kv : zoneCounts)
+        res.push_back({kv.first, kv.second});
 
     auto comp = [](const ZoneCount& a, const ZoneCount& b) {
         if (a.count != b.count) return a.count > b.count;
         return a.zone < b.zone;
     };
 
-  
+    // GitHub'da Timeout yememek için partial_sort kullanıyoruz (Sonuç değişmez)
     if ((int)res.size() > k) {
-        std::partial_sort(res.begin(), res.begin() + k, res.end(), comp);
+        partial_sort(res.begin(), res.begin() + k, res.end(), comp);
         res.resize(k);
     } else {
-        std::sort(res.begin(), res.end(), comp);
+        sort(res.begin(), res.end(), comp);
     }
 
     return res;
@@ -158,17 +157,12 @@ vector<ZoneCount> TripAnalyzer::topZones(int k) const {
 
 vector<SlotCount> TripAnalyzer::topBusySlots(int k) const {
     vector<SlotCount> res;
-    res.reserve(global_slot_counts.size() * 3);
+    res.reserve(slotCounts.size() * 3);
 
-    for (const auto& kv : global_slot_counts) {
+    for (const auto& kv : slotCounts) {
         for (int h = 0; h < 24; ++h) {
-            if (kv.second[h] > 0) {
-                SlotCount sc;
-                sc.zone = kv.first; // .zone
-                sc.hour = h;
-                sc.count = kv.second[h]; // long long
-                res.push_back(sc);
-            }
+            if (kv.second[h] > 0)
+                res.push_back({kv.first, h, kv.second[h]});
         }
     }
 
@@ -178,17 +172,13 @@ vector<SlotCount> TripAnalyzer::topBusySlots(int k) const {
         return a.hour < b.hour;
     };
 
-    // PARTIAL SORT
+    // GitHub'da Timeout yememek için partial_sort kullanıyoruz
     if ((int)res.size() > k) {
-        std::partial_sort(res.begin(), res.begin() + k, res.end(), comp);
+        partial_sort(res.begin(), res.begin() + k, res.end(), comp);
         res.resize(k);
     } else {
-        std::sort(res.begin(), res.end(), comp);
+        sort(res.begin(), res.end(), comp);
     }
 
     return res;
 }
-
-
-
-

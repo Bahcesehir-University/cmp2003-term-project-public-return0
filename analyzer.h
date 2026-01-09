@@ -21,16 +21,13 @@ struct SlotCount {
 
 class TripAnalyzer {
 private:
-    // Verileri saklayan haritalar
+    // HackerRank kodundaki degiskenlerin aynisi buraya eklendi
     unordered_map<string, long long> zoneCounts;
     unordered_map<string, array<long long, 24>> slotCounts;
 
 public:
-    // GitHub için gerekli (Dosyadan okuma)
-    void ingestFile(const string& csvPath);
-
-    // HackerRank uyumluluğu için (Stdin okuma)
-    void ingestStdin();
+    void ingestFile(const string& path);
+    void ingestStdin(); // HackerRank icin gerekli
 
     vector<ZoneCount> topZones(int k = 10) const;
     vector<SlotCount> topBusySlots(int k = 10) const;
